@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { MAX_PDF_FILE_SIZE_MB } from "@/lib/constants";
 
 type Status = "idle" | "uploading" | "success" | "error";
-
-const MAX_FILE_SIZE_MB = 50;
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -24,8 +23,8 @@ export default function Home() {
       setStatus("error");
       return;
     }
-    if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      setError(`Datei zu groß. Maximal ${MAX_FILE_SIZE_MB} MB.`);
+    if (f.size > MAX_PDF_FILE_SIZE_MB * 1024 * 1024) {
+      setError(`Datei zu groß. Maximal ${MAX_PDF_FILE_SIZE_MB} MB.`);
       setFile(null);
       setStatus("error");
       return;
@@ -54,8 +53,8 @@ export default function Home() {
       setStatus("error");
       return;
     }
-    if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      setError(`Datei zu groß. Maximal ${MAX_FILE_SIZE_MB} MB.`);
+    if (f.size > MAX_PDF_FILE_SIZE_MB * 1024 * 1024) {
+      setError(`Datei zu groß. Maximal ${MAX_PDF_FILE_SIZE_MB} MB.`);
       setFile(null);
       setStatus("error");
       return;
@@ -72,6 +71,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("pdf", file);
+      formData.append("filename", file.name);
       const res = await fetch("/api/process-pdf", {
         method: "POST",
         body: formData,
@@ -84,7 +84,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "rechnungen.zip";
+      a.download = res.headers.get("X-Zip-Filename") ?? "rechnungen.zip";
       a.click();
       URL.revokeObjectURL(url);
       const count = res.headers.get("X-Page-Count");
@@ -165,9 +165,14 @@ export default function Home() {
         )}
 
         {status === "uploading" && (
-          <div className="flex items-center justify-center gap-2 text-zinc-400">
-            <span className="inline-block w-5 h-5 border-2 border-zinc-500 border-t-emerald-500 rounded-full animate-spin" />
-            <span>PDF wird verarbeitet …</span>
+          <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 text-center">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-5 h-5 border-2 border-zinc-500 border-t-emerald-500 rounded-full animate-spin" />
+              <span>PDF wird verarbeitet …</span>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Bei großen Dateien kann das bis zu einer Minute dauern.
+            </p>
           </div>
         )}
 

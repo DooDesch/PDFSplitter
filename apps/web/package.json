@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@pdf-splitter/pdf-processor": "workspace:*",
+    "@vercel/analytics": "^1.6.1",
     "jszip": "^3.10.1",
     "next": "16.1.6",
     "react": "^19.2.4",
