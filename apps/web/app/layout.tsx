@@ -9,6 +9,8 @@ const description =
 
 export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = getBaseUrl();
+  // Absolute image URL required for Discord and other crawlers (they often ignore relative URLs)
+  const ogImageUrl = `${baseUrl.replace(/\/$/, "")}/opengraph-image`;
   return {
     metadataBase: new URL(baseUrl),
     title,
@@ -21,11 +23,20 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "PDF Splitter",
       title,
       description,
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: "PDF Splitter – Abrechnungen in Einzel-PDFs aufteilen, Download als ZIP",
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }
