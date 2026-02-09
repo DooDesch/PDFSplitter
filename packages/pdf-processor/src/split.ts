@@ -41,11 +41,7 @@ export async function splitPdfByPages(
     const [copiedPage] = await newDoc.copyPages(sourceDoc, [i]);
     newDoc.addPage(copiedPage);
     const pdfBytes = await newDoc.save({ useObjectStreams: false });
-    const buf = new Uint8Array(pdfBytes);
-    result.push(buf);
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'split.ts:after push',message:'split page buffer',data:{pageIndex:i,length:buf.length,byteLength:buf.byteLength},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+    result.push(new Uint8Array(pdfBytes));
     onProgress?.(i + 1, pageCount);
   }
 

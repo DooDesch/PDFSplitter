@@ -45,10 +45,6 @@ describe("example PDF (Muster-Baulohnabrechnung.pdf)", () => {
 
     const pages = await processPdfToPages(new Uint8Array(pdfBuffer));
 
-    // #region agent log
-    const lengths = pages.map((p) => p.buffer.length);
-    fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'example-pdf.integration.test.ts',message:'integration test page buffer lengths',data:{expectedPageCount,pagesLength:pages.length,bufferLengths:lengths},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     expect(pages.length).toBe(expectedPageCount);
 
     for (let i = 0; i < pages.length; i++) {

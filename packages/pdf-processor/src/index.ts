@@ -54,9 +54,6 @@ export async function processPdfToPages(
     const text = await extractTextFromPdf(new Uint8Array(buffer));
     const recipient = parseRecipientFromText(text);
     const filename = buildSafeFilename(recipient, i);
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:before push',message:'processPdfToPages buffer',data:{pageIndex:i,bufferLength:buffer.length,bufferByteLength:buffer.byteLength},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     result.push({ buffer, filename, pageIndex: i });
   }
   onProgress?.("processing", pageTotal, pageTotal);
