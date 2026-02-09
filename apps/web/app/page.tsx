@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { MAX_PDF_FILE_SIZE_MB } from "@/lib/constants";
+import { LARGE_FILE_WARNING_MB } from "@/lib/constants";
+
+// PDF.js worker (must be set before first getDocument). Using CDN to match pdf-processor's pdfjs-dist.
+const PDF_WORKER_VERSION = "5.4.624";
+const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@${PDF_WORKER_VERSION}/build/pdf.worker.min.mjs`;
+
+function buildZipFilename(originalName: string | null): string {
+  if (!originalName || typeof originalName !== "string") return "rechnungen.zip";
+  const base = originalName.replace(/\.pdf$/i, "").trim();
+  const safe = base.replace(/[^\wäöüÄÖÜß\-_.\s]/g, "_").slice(0, 80) || "rechnungen";
+  return `${safe}_rechnungen.zip`;
+}
 
 type Status = "idle" | "uploading" | "success" | "error";
 
@@ -19,12 +30,6 @@ export default function Home() {
     if (!f) return;
     if (f.type !== "application/pdf") {
       setError("Nur PDF-Dateien sind erlaubt.");
-      setFile(null);
-      setStatus("error");
-      return;
-    }
-    if (f.size > MAX_PDF_FILE_SIZE_MB * 1024 * 1024) {
-      setError(`Datei zu groß. Maximal ${MAX_PDF_FILE_SIZE_MB} MB.`);
       setFile(null);
       setStatus("error");
       return;
@@ -53,12 +58,6 @@ export default function Home() {
       setStatus("error");
       return;
     }
-    if (f.size > MAX_PDF_FILE_SIZE_MB * 1024 * 1024) {
-      setError(`Datei zu groß. Maximal ${MAX_PDF_FILE_SIZE_MB} MB.`);
-      setFile(null);
-      setStatus("error");
-      return;
-    }
     setError(null);
     setFile(f);
     setStatus("idle");
@@ -69,29 +68,47 @@ export default function Home() {
     setStatus("uploading");
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("pdf", file);
-      formData.append("filename", file.name);
-      const res = await fetch("/api/process-pdf", {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? `Fehler ${res.status}`);
+      // Dynamic import so pdf-processor and JSZip (browser-only deps) never run during SSR.
+      const [{ processPdfToPages, setPdfWorkerSrc }, { default: JSZip }] =
+        await Promise.all([
+          import("@pdf-splitter/pdf-processor"),
+          import("jszip"),
+        ]);
+      setPdfWorkerSrc(PDF_WORKER_URL);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdfBuffer = new Uint8Array(arrayBuffer);
+      const pages = await processPdfToPages(pdfBuffer);
+
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+
+      for (const { buffer, filename } of pages) {
+        let uniqueName = filename;
+        let counter = 1;
+        while (usedNames.has(uniqueName)) {
+          const base = filename.replace(/\.pdf$/i, "");
+          uniqueName = `${base}_${counter}.pdf`;
+          counter++;
+        }
+        usedNames.add(uniqueName);
+        zip.file(uniqueName, buffer);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = res.headers.get("X-Zip-Filename") ?? "rechnungen.zip";
+      a.download = buildZipFilename(file.name);
       a.click();
       URL.revokeObjectURL(url);
-      const count = res.headers.get("X-Page-Count");
-      setPageCount(count ? parseInt(count, 10) : null);
+
+      setPageCount(pages.length);
       setStatus("success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verarbeitung fehlgeschlagen.");
+      setError(
+        err instanceof Error ? err.message : "Verarbeitung fehlgeschlagen."
+      );
       setStatus("error");
     }
   }, [file]);
@@ -103,6 +120,9 @@ export default function Home() {
     setPageCount(null);
   }, []);
 
+  const isLargeFile =
+    file != null && file.size > LARGE_FILE_WARNING_MB * 1024 * 1024;
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-lg space-y-6">
@@ -110,10 +130,12 @@ export default function Home() {
           PDF Splitter
         </h1>
         <p className="text-sm text-zinc-400 text-center">
-          Lohn- und Gehaltsabrechnungen: Jede Seite wird ein eigenes PDF – sauber getrennt, fertig als ZIP.
+          Lohn- und Gehaltsabrechnungen: Jede Seite wird ein eigenes PDF –
+          sauber getrennt, fertig als ZIP.
         </p>
         <p className="text-xs text-zinc-500 text-center max-w-md mx-auto">
-          Ideal für Personalabteilungen: Mehrseitige Abrechnungs-PDFs hochladen, aufteilen, alle Einzeldokumente auf einmal herunterladen. Kostenlos, ohne Anmeldung.
+          Verarbeitung erfolgt vollständig auf Ihrem Gerät – keine Daten werden
+          hochgeladen. Kostenlos, ohne Anmeldung.
         </p>
 
         <div
@@ -141,6 +163,11 @@ export default function Home() {
               <p className="text-xs text-zinc-500">
                 {(file.size / 1024 / 1024).toFixed(2)} MB
               </p>
+              {isLargeFile && (
+                <p className="text-xs text-amber-400">
+                  Sehr große Dateien können den Browser verlangsamen.
+                </p>
+              )}
               <label
                 htmlFor="pdf-input"
                 className="inline-block text-sm text-emerald-400 hover:text-emerald-300 cursor-pointer underline"
@@ -153,7 +180,8 @@ export default function Home() {
               htmlFor="pdf-input"
               className="cursor-pointer block text-zinc-400 hover:text-zinc-300"
             >
-              PDF hier ablegen oder <span className="text-emerald-400 underline">durchsuchen</span>
+              PDF hier ablegen oder{" "}
+              <span className="text-emerald-400 underline">durchsuchen</span>
             </label>
           )}
         </div>
@@ -171,14 +199,16 @@ export default function Home() {
               <span>PDF wird verarbeitet …</span>
             </div>
             <p className="text-xs text-zinc-500">
-              Bei großen Dateien kann das bis zu einer Minute dauern.
+              Bei großen Dateien kann das etwas dauern.
             </p>
           </div>
         )}
 
         {status === "success" && (
           <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm p-3 text-center">
-            Fertig. {pageCount != null ? `${pageCount} Dokumente – ` : ""}ZIP-Download wurde gestartet.
+            Fertig.{" "}
+            {pageCount != null ? `${pageCount} Dokumente – ` : ""}ZIP-Download
+            wurde gestartet.
           </div>
         )}
 

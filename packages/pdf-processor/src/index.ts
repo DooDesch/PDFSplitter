@@ -1,5 +1,5 @@
 import { splitPdfByPages } from "./split.js";
-import { extractTextFromPdf } from "./extract-text.js";
+import { extractTextFromPdf, setPdfWorkerSrc } from "./extract-text.js";
 import {
   parseRecipientFromText,
   buildSafeFilename,
@@ -7,10 +7,16 @@ import {
 } from "./recipient-from-text.js";
 
 export type { Recipient };
-export { splitPdfByPages, extractTextFromPdf, parseRecipientFromText, buildSafeFilename };
+export {
+  splitPdfByPages,
+  extractTextFromPdf,
+  setPdfWorkerSrc,
+  parseRecipientFromText,
+  buildSafeFilename,
+};
 
 export interface ProcessedPage {
-  buffer: Buffer;
+  buffer: Uint8Array;
   filename: string;
   pageIndex: number;
 }
@@ -18,8 +24,11 @@ export interface ProcessedPage {
 /**
  * Loads a PDF buffer, splits by page, extracts text from each page,
  * derives a filename from recipient heuristics, and returns one entry per page.
+ * Works in Node and browser (Uint8Array / ArrayBuffer).
  */
-export async function processPdfToPages(pdfBuffer: Buffer): Promise<ProcessedPage[]> {
+export async function processPdfToPages(
+  pdfBuffer: Uint8Array | ArrayBuffer
+): Promise<ProcessedPage[]> {
   const pageBuffers = await splitPdfByPages(pdfBuffer);
   const result: ProcessedPage[] = [];
 
