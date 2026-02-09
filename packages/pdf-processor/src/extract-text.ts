@@ -1,18 +1,36 @@
 // Lazy-loaded in Node (legacy build) vs browser (default build) to avoid DOMMatrix etc. in Node.
+declare const require: NodeRequire;
+import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+
 interface PdfJsLib {
-  getDocument(opts: { data: Uint8Array }): { promise: Promise<PdfDocument> };
+  getDocument(opts: { data: Uint8Array; standardFontDataUrl?: string }): {
+    promise: Promise<PdfDocument>;
+  };
   GlobalWorkerOptions?: { workerSrc: string };
 }
 interface PdfDocument {
   numPages: number;
-  getPage(i: number): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string }> }> }>;
+  getPage(
+    i: number,
+  ): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string }> }> }>;
 }
 
 let pdfjsModule: PdfJsLib | null = null;
 let pendingWorkerSrc: string | null = null;
+let nodeStandardFontDataUrl: string | null = null;
 
 function isBrowser(): boolean {
   return typeof globalThis !== "undefined" && "window" in globalThis;
+}
+
+/** Resolve file:// URL to pdfjs-dist/standard_fonts/ for Node (trailing slash required). */
+function getNodeStandardFontDataUrl(): string {
+  if (nodeStandardFontDataUrl) return nodeStandardFontDataUrl;
+  const pdfjsPkgPath = require.resolve("pdfjs-dist/package.json");
+  const standardFontsDir = join(dirname(pdfjsPkgPath), "standard_fonts");
+  nodeStandardFontDataUrl = pathToFileURL(join(standardFontsDir, "/")).href;
+  return nodeStandardFontDataUrl;
 }
 
 async function getPdfJs(): Promise<PdfJsLib> {
@@ -41,9 +59,17 @@ export function setPdfWorkerSrc(src: string): void {
  * Uses pdfjs-dist; in browser, call setPdfWorkerSrc() once before first use.
  * In Node, uses pdfjs-dist legacy build (no worker required).
  */
-export async function extractTextFromPdf(pdfBuffer: Uint8Array): Promise<string> {
+export async function extractTextFromPdf(
+  pdfBuffer: Uint8Array,
+): Promise<string> {
   const pdfjs = await getPdfJs();
-  const doc = await pdfjs.getDocument({ data: pdfBuffer }).promise;
+  const getDocumentOpts: { data: Uint8Array; standardFontDataUrl?: string } = {
+    data: pdfBuffer,
+  };
+  if (!isBrowser()) {
+    getDocumentOpts.standardFontDataUrl = getNodeStandardFontDataUrl();
+  }
+  const doc = await pdfjs.getDocument(getDocumentOpts).promise;
   const numPages = doc.numPages;
   const parts: string[] = [];
 

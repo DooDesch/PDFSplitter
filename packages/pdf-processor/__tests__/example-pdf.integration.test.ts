@@ -1,53 +1,74 @@
 /**
- * Regression test: example PDF must always produce the same page count and filenames.
- * Uses examples/Muster-Baulohnabrechnung.pdf and __tests__/fixtures/expected-muster-baulohnabrechnung.json.
+ * Regression test: example PDF must produce one valid, non-empty PDF per page.
+ *
+ * Expected page count comes from pdf-lib only (getPdfPageCount), not from our
+ * processing logic – so we never "bake in" broken results. Every page buffer must
+ * be non-empty and a valid PDF; otherwise the test fails.
  */
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { describe, it, expect } from "vitest";
-import { processPdfToPages } from "@pdf-splitter/pdf-processor";
+import {
+  processPdfToPages,
+  getPdfPageCount,
+} from "@pdf-splitter/pdf-processor";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Repo root: packages/pdf-processor/__tests__ -> pdf-processor -> packages -> root
 const repoRoot = join(__dirname, "..", "..", "..");
-const examplePdfPath = join(repoRoot, "examples", "Muster-Baulohnabrechnung.pdf");
-const expectedPath = join(__dirname, "fixtures", "expected-muster-baulohnabrechnung.json");
+const examplePdfPath = join(
+  repoRoot,
+  "examples",
+  "Muster-Baulohnabrechnung.pdf",
+);
+
+/** Minimum size for a single-page PDF (avoids "empty" or placeholder output). */
+const MIN_PAGE_PDF_BYTES = 500;
 
 describe("example PDF (Muster-Baulohnabrechnung.pdf)", () => {
-  it("processPdfToPages produces expected page count and filenames", async () => {
+  it("produces one non-empty, valid PDF per page (expected count from pdf-lib)", async () => {
     if (!existsSync(examplePdfPath)) {
-      throw new Error(`Example PDF not found at ${examplePdfPath}. Run tests from repo root.`);
-    }
-    if (!existsSync(expectedPath)) {
       throw new Error(
-        `Expected fixture not found at ${expectedPath}. Run: pnpm test:generate-expected`
+        `Example PDF not found at ${examplePdfPath}. Run tests from repo root.`,
       );
     }
 
-    const expected = JSON.parse(readFileSync(expectedPath, "utf-8")) as {
-      pageCount: number;
-      filenames: string[];
-    };
     const pdfBuffer = new Uint8Array(readFileSync(examplePdfPath));
-    const pages = await processPdfToPages(pdfBuffer);
 
-    expect(pages.length).toBe(expected.pageCount);
-    expect(pages.map((p) => p.filename)).toEqual(expected.filenames);
-  });
+    // Independent source of truth: page count from pdf-lib only, not our processing.
+    // Use copies so buffers are not transferred/mutated by pdf-lib or pdfjs.
+    const expectedPageCount = await getPdfPageCount(new Uint8Array(pdfBuffer));
+    expect(expectedPageCount).toBeGreaterThan(0);
 
-  it("each non-empty page buffer is valid PDF", async () => {
-    if (!existsSync(examplePdfPath)) return;
-    const pdfBuffer = new Uint8Array(readFileSync(examplePdfPath));
-    const pages = await processPdfToPages(pdfBuffer);
+    const pages = await processPdfToPages(new Uint8Array(pdfBuffer));
 
-    for (const { buffer } of pages) {
-      if (buffer.length > 0) {
-        const header = String.fromCharCode(...buffer.slice(0, 5));
-        expect(header).toBe("%PDF-");
-      }
+    // #region agent log
+    const lengths = pages.map((p) => p.buffer.length);
+    fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'example-pdf.integration.test.ts',message:'integration test page buffer lengths',data:{expectedPageCount,pagesLength:pages.length,bufferLengths:lengths},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    expect(pages.length).toBe(expectedPageCount);
+
+    for (let i = 0; i < pages.length; i++) {
+      const { buffer, filename } = pages[i]!;
+      expect(
+        buffer.length,
+        `Page ${i + 1} must not be 0 bytes (got ${buffer.length})`,
+      ).toBeGreaterThan(0);
+      expect(
+        buffer.length,
+        `Page ${i + 1} must be a real PDF (min ${MIN_PAGE_PDF_BYTES} bytes, got ${buffer.length})`,
+      ).toBeGreaterThanOrEqual(MIN_PAGE_PDF_BYTES);
+
+      const header = String.fromCharCode(...buffer.slice(0, 5));
+      expect(header, `Page ${i + 1} buffer must start with %PDF-`).toBe(
+        "%PDF-",
+      );
+
+      expect(filename.length).toBeGreaterThan(0);
+      expect(filename.endsWith(".pdf")).toBe(true);
     }
   });
 });

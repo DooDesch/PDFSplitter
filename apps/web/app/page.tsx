@@ -115,10 +115,16 @@ export default function Home() {
           counter++;
         }
         usedNames.add(uniqueName);
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:before zip.file',message:'buffer before zip',data:{filename:uniqueName,bufferLength:buffer.length,bufferByteLength:buffer?.byteLength ?? null,isUint8Array:buffer instanceof Uint8Array},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         zip.file(uniqueName, buffer);
       }
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:after generateAsync',message:'zip blob',data:{zipBlobSize:zipBlob.size,pageCount:pages.length},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = url;

@@ -9,7 +9,7 @@ export interface SplitProgressCallback {
  * Uses pdf-lib; fast way to get page count for progress UI.
  */
 export async function getPdfPageCount(
-  pdfBuffer: Uint8Array | ArrayBuffer
+  pdfBuffer: Uint8Array | ArrayBuffer,
 ): Promise<number> {
   const bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
@@ -25,7 +25,7 @@ export async function getPdfPageCount(
  */
 export async function splitPdfByPages(
   pdfBuffer: Uint8Array | ArrayBuffer,
-  options?: { onProgress?: SplitProgressCallback }
+  options?: { onProgress?: SplitProgressCallback },
 ): Promise<Uint8Array[]> {
   const bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
@@ -40,8 +40,12 @@ export async function splitPdfByPages(
     const newDoc = await PDFDocument.create();
     const [copiedPage] = await newDoc.copyPages(sourceDoc, [i]);
     newDoc.addPage(copiedPage);
-    const pdfBytes = await newDoc.save();
-    result.push(new Uint8Array(pdfBytes));
+    const pdfBytes = await newDoc.save({ useObjectStreams: false });
+    const buf = new Uint8Array(pdfBytes);
+    result.push(buf);
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/e3185b0b-ed05-469a-9e26-71acea8e6545',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'split.ts:after push',message:'split page buffer',data:{pageIndex:i,length:buf.length,byteLength:buf.byteLength},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     onProgress?.(i + 1, pageCount);
   }
 
