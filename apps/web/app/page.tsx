@@ -112,6 +112,9 @@ export default function Home() {
         <p className="text-sm text-zinc-400 text-center">
           Lohn- und Gehaltsrechnungen in Einzeldokumente aufteilen. Eine Seite = ein Dokument.
         </p>
+        <p className="text-xs text-zinc-500 text-center max-w-md mx-auto">
+          Kostenloser PDF Splitter für Lohn- und Gehaltsabrechnungen: Eine Seite pro PDF, Download als ZIP.
+        </p>
 
         <div
           onDrop={handleDrop}
