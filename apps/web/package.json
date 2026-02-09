@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm --filter @pdf-splitter/pdf-processor build && next build",
+    "build": "pnpm --filter @pdf-splitter/pdf-processor build && node scripts/copy-pdf-worker.cjs && next build",
+    "postinstall": "node scripts/copy-pdf-worker.cjs",
     "start": "next start",
     "lint": "next lint"
   },
@@ -22,6 +23,7 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.24",
+    "pdfjs-dist": "5.4.624",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3"

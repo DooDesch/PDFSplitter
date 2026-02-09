@@ -3,9 +3,8 @@
 import { useCallback, useState } from "react";
 import { LARGE_FILE_WARNING_MB } from "@/lib/constants";
 
-// PDF.js worker (must be set before first getDocument). Using CDN to match pdf-processor's pdfjs-dist.
-const PDF_WORKER_VERSION = "5.4.624";
-const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@${PDF_WORKER_VERSION}/build/pdf.worker.min.mjs`;
+// PDF.js worker (must be set before first getDocument). Served from public/ to avoid CORS.
+const PDF_WORKER_URL = "/pdf.worker.min.mjs";
 
 function buildZipFilename(originalName: string | null): string {
   if (!originalName || typeof originalName !== "string") return "rechnungen.zip";
