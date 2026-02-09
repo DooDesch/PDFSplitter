@@ -110,10 +110,10 @@ export default function Home() {
           PDF Splitter
         </h1>
         <p className="text-sm text-zinc-400 text-center">
-          Lohn- und Gehaltsrechnungen in Einzeldokumente aufteilen. Eine Seite = ein Dokument.
+          Lohn- und Gehaltsabrechnungen: Jede Seite wird ein eigenes PDF – sauber getrennt, fertig als ZIP.
         </p>
         <p className="text-xs text-zinc-500 text-center max-w-md mx-auto">
-          Kostenloser PDF Splitter für Lohn- und Gehaltsabrechnungen: Eine Seite pro PDF, Download als ZIP.
+          Ideal für Personalabteilungen: Mehrseitige Abrechnungs-PDFs hochladen, aufteilen, alle Einzeldokumente auf einmal herunterladen. Kostenlos, ohne Anmeldung.
         </p>
 
         <div

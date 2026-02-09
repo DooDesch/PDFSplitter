@@ -3,9 +3,9 @@ import { Analytics } from "@vercel/analytics/react";
 import { getBaseUrl } from "@/lib/site-url";
 import "./globals.css";
 
-const title = "PDF Splitter – Lohn- & Gehaltsabrechnungen teilen | Kostenlos";
+const title = "PDF Splitter – Abrechnungen Seite für Seite teilen | Kostenlos";
 const description =
-  "PDF teilen: Lohn- und Gehaltsabrechnungen kostenlos in Einzeldokumente aufteilen. Eine Seite = ein PDF. Download als ZIP.";
+  "Lohn- und Gehaltsabrechnungen kostenlos aufteilen: Jede Seite wird ein eigenes PDF, Download als ZIP. Ohne Anmeldung, ohne Speicherung Ihrer Daten.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = getBaseUrl();
@@ -41,7 +41,7 @@ export default function RootLayout({
     "@type": "WebApplication",
     name: "PDF Splitter",
     description:
-      "Kostenloser PDF Splitter für Lohn- und Gehaltsabrechnungen. Eine Seite pro Dokument, Download als ZIP.",
+      "Lohn- und Gehaltsabrechnungen in Einzel-PDFs aufteilen – jede Seite ein eigenes Dokument, Download als ZIP. Kostenlos und ohne Anmeldung.",
     url: baseUrl,
     applicationCategory: "UtilitiesApplication",
     operatingSystem: "Any",

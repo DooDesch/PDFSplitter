@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "PDF Splitter – Lohn- und Gehaltsabrechnungen in Einzeldokumente aufteilen";
+export const alt = "PDF Splitter – Lohn- und Gehaltsabrechnungen Seite für Seite in Einzel-PDFs aufteilen, Download als ZIP";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -23,7 +23,7 @@ export default function Image() {
       >
         <div style={{ fontWeight: 600, marginBottom: 12 }}>PDF Splitter</div>
         <div style={{ fontSize: 28, color: "#a1a1aa" }}>
-          Lohn- und Gehaltsabrechnungen teilen · Eine Seite = ein PDF · Kostenlos
+          Jede Seite ein eigenes PDF · Abrechnungen sauber getrennt · Kostenlos
         </div>
         <div
           style={{
