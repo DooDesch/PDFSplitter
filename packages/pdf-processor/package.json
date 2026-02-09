@@ -6,7 +6,10 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:generate-expected": "tsx scripts/generate-expected.ts"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
@@ -14,6 +17,8 @@
   },
   "devDependencies": {
     "@types/node": "^25.2.2",
-    "typescript": "^5.9.3"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

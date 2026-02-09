@@ -14,6 +14,7 @@ function buildZipFilename(originalName: string | null): string {
 }
 
 type Status = "idle" | "uploading" | "success" | "error";
+type ProgressPhase = "splitting" | "processing";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -21,6 +22,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [progressPhase, setProgressPhase] = useState<ProgressPhase | null>(null);
+  const [progressCurrent, setProgressCurrent] = useState(0);
+  const [progressTotal, setProgressTotal] = useState(0);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -66,18 +70,38 @@ export default function Home() {
     if (!file) return;
     setStatus("uploading");
     setError(null);
+    setProgressPhase(null);
+    setProgressCurrent(0);
+    setProgressTotal(0);
     try {
-      // Dynamic import so pdf-processor and JSZip (browser-only deps) never run during SSR.
-      const [{ processPdfToPages, setPdfWorkerSrc }, { default: JSZip }] =
-        await Promise.all([
-          import("@pdf-splitter/pdf-processor"),
-          import("jszip"),
-        ]);
+      const [
+        {
+          processPdfToPages,
+          getPdfPageCount,
+          setPdfWorkerSrc,
+        },
+        { default: JSZip },
+      ] = await Promise.all([
+        import("@pdf-splitter/pdf-processor"),
+        import("jszip"),
+      ]);
       setPdfWorkerSrc(PDF_WORKER_URL);
 
       const arrayBuffer = await file.arrayBuffer();
       const pdfBuffer = new Uint8Array(arrayBuffer);
-      const pages = await processPdfToPages(pdfBuffer);
+
+      const total = await getPdfPageCount(pdfBuffer);
+      setProgressTotal(total);
+      setProgressPhase("splitting");
+      setProgressCurrent(0);
+
+      const pages = await processPdfToPages(pdfBuffer, {
+        onProgress: (phase, current, total) => {
+          setProgressPhase(phase);
+          setProgressCurrent(current);
+          setProgressTotal(total);
+        },
+      });
 
       const zip = new JSZip();
       const usedNames = new Set<string>();
@@ -117,6 +141,9 @@ export default function Home() {
     setStatus("idle");
     setError(null);
     setPageCount(null);
+    setProgressPhase(null);
+    setProgressCurrent(0);
+    setProgressTotal(0);
   }, []);
 
   const isLargeFile =
@@ -192,14 +219,39 @@ export default function Home() {
         )}
 
         {status === "uploading" && (
-          <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 text-center">
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-5 h-5 border-2 border-zinc-500 border-t-emerald-500 rounded-full animate-spin" />
-              <span>PDF wird verarbeitet …</span>
+          <div className="flex flex-col gap-3 w-full">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-zinc-300 text-center">
+                {progressPhase === "splitting" &&
+                  `Seiten werden getrennt … ${progressCurrent} von ${progressTotal}`}
+                {progressPhase === "processing" && (
+                  progressCurrent >= progressTotal
+                    ? "ZIP wird erstellt …"
+                    : `Seite ${progressCurrent + 1} von ${progressTotal} wird verarbeitet …`
+                )}
+                {!progressPhase && progressTotal === 0 && "PDF wird geladen …"}
+              </p>
+              {progressTotal > 0 && (
+                <div className="h-2 w-full rounded-full bg-zinc-700 overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-300 ease-out"
+                    style={{
+                      width: `${
+                        progressTotal
+                          ? Math.round((progressCurrent / progressTotal) * 100)
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              )}
             </div>
-            <p className="text-xs text-zinc-500">
-              Bei großen Dateien kann das etwas dauern.
-            </p>
+            {progressTotal === 0 && (
+              <div className="flex items-center justify-center gap-2 text-zinc-500">
+                <span className="inline-block w-4 h-4 border-2 border-zinc-500 border-t-emerald-500 rounded-full animate-spin" />
+                <span className="text-xs">Seitenanzahl wird ermittelt …</span>
+              </div>
+            )}
           </div>
         )}
 

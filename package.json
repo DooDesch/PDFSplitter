@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "pnpm --filter @pdf-splitter/pdf-processor build && pnpm --filter web dev",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "test": "pnpm --filter @pdf-splitter/pdf-processor test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
