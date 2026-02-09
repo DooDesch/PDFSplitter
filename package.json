@@ -1,0 +1,12 @@
+{
+  "name": "pdf-splitter",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @pdf-splitter/pdf-processor build && pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
