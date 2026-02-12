@@ -234,7 +234,7 @@ export default function Home() {
       const blob = await res.blob();
       const f = new File([blob], "encrypted.pdf", { type: "application/pdf" });
       setFile(f);
-      setPassword("kanbanery");
+      setPassword("");
     } catch (e) {
       setError(normalizePdfError(e));
     }
@@ -255,6 +255,7 @@ export default function Home() {
       );
       setPageCount(result.pageCount);
       setStatus("success");
+      setPassword(modalPassword);
       setModalPassword("");
     } catch (err) {
       setModalError(normalizePdfError(err));
@@ -262,6 +263,32 @@ export default function Home() {
       setStatus("idle");
     }
   }, [file, modalPassword, runProcessing]);
+
+  // Auto-detect encrypted PDF when file is set (Chrome-like: show password modal immediately).
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { checkPdfNeedsPassword, setPdfWorkerSrc } = await import(
+          "@pdf-splitter/pdf-processor"
+        );
+        setPdfWorkerSrc(PDF_WORKER_URL);
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const needsPassword = await checkPdfNeedsPassword(buf);
+        if (!cancelled && needsPassword) {
+          setShowPasswordModal(true);
+          setModalPassword("");
+          setModalError(null);
+        }
+      } catch {
+        // Non-encryption errors (e.g. corrupted): do nothing; user will see error on "Verarbeiten".
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   useEffect(() => {
     if (showPasswordModal) {
@@ -277,7 +304,7 @@ export default function Home() {
       {showPasswordModal && (
         <dialog
           ref={passwordDialogRef}
-          className="rounded-xl border border-zinc-600 bg-zinc-800 p-6 shadow-xl backdrop:bg-black/50"
+          className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-600 bg-zinc-800 p-6 shadow-xl backdrop:bg-black/50"
           onCancel={handlePasswordModalCancel}
         >
           <h2 className="text-lg font-semibold text-zinc-100 mb-2">
@@ -339,7 +366,7 @@ export default function Home() {
               onClick={loadSampleEncryptedPdf}
               className="text-sm text-emerald-400 hover:text-emerald-300 underline"
             >
-              Beispiel: verschlüsseltes PDF laden (Passwort: kanbanery)
+              Beispiel: verschlüsseltes PDF laden
             </button>
           </p>
         )}

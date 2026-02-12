@@ -3,6 +3,7 @@ import {
   extractTextFromPdf,
   getDecryptedPdfBytes,
   setPdfWorkerSrc,
+  checkPdfNeedsPassword,
 } from "./extract-text.js";
 import {
   parseRecipientFromText,
@@ -24,6 +25,7 @@ export {
   extractTextFromPdf,
   getDecryptedPdfBytes,
   setPdfWorkerSrc,
+  checkPdfNeedsPassword,
   parseRecipientFromText,
   buildSafeFilename,
   processPdfToPages,

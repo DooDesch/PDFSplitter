@@ -93,6 +93,36 @@ export async function getPdfPageCountWithPassword(
   return doc.numPages;
 }
 
+/** True if opening the PDF without a password fails with "password required" / encrypted. Call setPdfWorkerSrc() before use in browser. */
+export async function checkPdfNeedsPassword(pdfBuffer: Uint8Array): Promise<boolean> {
+  const pdfjs = await getPdfJs();
+  const opts: GetDocumentOpts = { data: new Uint8Array(pdfBuffer) };
+  if (!isBrowser()) {
+    opts.disableFontFace = true;
+    opts.standardFontDataUrl = await getNodeStandardFontDataUrl();
+    opts.verbosity = 0;
+  }
+  try {
+    await pdfjs.getDocument(opts).promise;
+    return false;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const lower = msg.toLowerCase();
+    const wrongPw =
+      lower.includes("wrong password") ||
+      lower.includes("invalid password") ||
+      lower.includes("incorrect password");
+    const encrypted = /encrypted/i.test(msg);
+    const required =
+      lower.includes("password") &&
+      (lower.includes("required") ||
+        lower.includes("needed") ||
+        lower.includes("given") ||
+        lower.includes("no password"));
+    return wrongPw || encrypted || required;
+  }
+}
+
 /**
  * Loads a password-protected PDF with PDF.js and returns bytes for pdf-lib.
  * In PDF.js, getData() is on the loading task (not the document). It returns
