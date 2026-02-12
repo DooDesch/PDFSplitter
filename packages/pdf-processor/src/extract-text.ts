@@ -26,7 +26,7 @@ let pdfjsModule: PdfJsLib | null = null;
 let pendingWorkerSrc: string | null = null;
 let nodeStandardFontDataUrl: string | null = null;
 
-function isBrowser(): boolean {
+export function isBrowser(): boolean {
   return typeof globalThis !== "undefined" && "window" in globalThis;
 }
 
@@ -43,10 +43,7 @@ async function getNodeStandardFontDataUrl(): Promise<string> {
   const req = (g as { require?: NodeRequire }).require;
   if (typeof req?.resolve === "function") {
     pdfjsPkgPath = req.resolve("pdfjs-dist/package.json");
-  } else if (
-    typeof globalThis !== "undefined" &&
-    !("window" in globalThis)
-  ) {
+  } else if (typeof globalThis !== "undefined" && !("window" in globalThis)) {
     const { createRequire } = await import("node:module");
     pdfjsPkgPath = createRequire(import.meta.url).resolve(
       "pdfjs-dist/package.json",
@@ -59,7 +56,7 @@ async function getNodeStandardFontDataUrl(): Promise<string> {
   return nodeStandardFontDataUrl;
 }
 
-async function getPdfJs(): Promise<PdfJsLib> {
+export async function getPdfJs(): Promise<PdfJsLib> {
   if (pdfjsModule) return pdfjsModule;
   if (!isBrowser()) {
     pdfjsModule = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as PdfJsLib;
@@ -80,6 +77,22 @@ export function setPdfWorkerSrc(src: string): void {
   }
 }
 
+/** Returns page count for a password-protected PDF by loading it with PDF.js (decrypted in memory). */
+export async function getPdfPageCountWithPassword(
+  pdfBuffer: Uint8Array,
+  password: string,
+): Promise<number> {
+  const pdfjs = await getPdfJs();
+  const opts: GetDocumentOpts = { data: new Uint8Array(pdfBuffer), password };
+  if (!isBrowser()) {
+    opts.disableFontFace = true;
+    opts.standardFontDataUrl = await getNodeStandardFontDataUrl();
+    opts.verbosity = 0;
+  }
+  const doc = await pdfjs.getDocument(opts).promise;
+  return doc.numPages;
+}
+
 /**
  * Loads a password-protected PDF with PDF.js and returns bytes for pdf-lib.
  * In PDF.js, getData() is on the loading task (not the document). It returns
@@ -91,7 +104,8 @@ export async function getDecryptedPdfBytes(
   password: string,
 ): Promise<Uint8Array> {
   const pdfjs = await getPdfJs();
-  const opts: GetDocumentOpts = { data: pdfBuffer, password };
+  // Pass a copy so PDF.js worker transfer does not detach the caller's buffer.
+  const opts: GetDocumentOpts = { data: new Uint8Array(pdfBuffer), password };
   if (!isBrowser()) {
     opts.disableFontFace = true;
     opts.standardFontDataUrl = await getNodeStandardFontDataUrl();
@@ -99,13 +113,16 @@ export async function getDecryptedPdfBytes(
   }
   const loadingTask = pdfjs.getDocument(opts);
   await loadingTask.promise;
-  const task = loadingTask as unknown as { getData?: () => Promise<Uint8Array> };
+  const task = loadingTask as unknown as {
+    getData?: () => Promise<Uint8Array>;
+  };
   if (typeof task.getData !== "function") {
     throw new Error(
       "Password-protected PDFs cannot be split: getData is not available in this build.",
     );
   }
-  return task.getData();
+  const out = await task.getData();
+  return out;
 }
 
 /**
@@ -118,8 +135,9 @@ export async function extractTextFromPdf(
   options?: { password?: string },
 ): Promise<string> {
   const pdfjs = await getPdfJs();
+  // Pass a copy so PDF.js worker transfer does not detach the caller's buffer.
   const getDocumentOpts: GetDocumentOpts = {
-    data: pdfBuffer,
+    data: new Uint8Array(pdfBuffer),
     ...(options?.password !== undefined && options.password !== ""
       ? { password: options.password }
       : {}),

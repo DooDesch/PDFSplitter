@@ -1,5 +1,10 @@
 import { PDFDocument } from "pdf-lib";
-import { getDecryptedPdfBytes } from "./extract-text.js";
+import {
+  getDecryptedPdfBytes,
+  getPdfPageCountWithPassword,
+  isBrowser,
+} from "./extract-text.js";
+import { splitEncryptedPdfByPagesInBrowser } from "./split-encrypted-browser.js";
 
 export interface SplitProgressCallback {
   (current: number, total: number): void;
@@ -39,14 +44,14 @@ export async function getPdfPageCount(
   pdfBuffer: Uint8Array | ArrayBuffer,
   options?: { password?: string },
 ): Promise<number> {
-  let bytes =
+  const bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
   const usedPassword =
     options?.password !== undefined && options.password !== "";
   if (usedPassword) {
-    bytes = await getDecryptedPdfBytes(bytes, options.password!);
+    return getPdfPageCountWithPassword(bytes, options.password!);
   }
-  const doc = await loadPdfDoc(bytes, usedPassword);
+  const doc = await loadPdfDoc(bytes, false);
   return doc.getPageCount();
 }
 
@@ -61,17 +66,33 @@ export async function splitPdfByPages(
   pdfBuffer: Uint8Array | ArrayBuffer,
   options?: { password?: string; onProgress?: SplitProgressCallback },
 ): Promise<Uint8Array[]> {
-  let bytes =
+  const bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
   const usedPassword =
     options?.password !== undefined && options.password !== "";
+  const onProgress = options?.onProgress;
+
   if (usedPassword) {
-    bytes = await getDecryptedPdfBytes(bytes, options.password!);
+    try {
+      return await splitEncryptedPdfByPagesInBrowser(
+        bytes,
+        options.password!,
+        onProgress,
+      );
+    } catch (err) {
+      // In browser, getData() returns encrypted bytes so fallback produces blank pages; only fall back in Node.
+      if (isBrowser()) throw err;
+      // No DOM (Node): fall back to getData + pdf-lib.
+    }
   }
-  const sourceDoc = await loadPdfDoc(bytes, usedPassword);
+
+  let loadBytes = bytes;
+  if (usedPassword) {
+    loadBytes = await getDecryptedPdfBytes(bytes, options.password!);
+  }
+  const sourceDoc = await loadPdfDoc(loadBytes, usedPassword);
   const pageCount = sourceDoc.getPageCount();
   const result: Uint8Array[] = [];
-  const onProgress = options?.onProgress;
 
   for (let i = 0; i < pageCount; i++) {
     const newDoc = await PDFDocument.create();

@@ -7,9 +7,11 @@ import { LARGE_FILE_WARNING_MB } from "@/lib/constants";
 const PDF_WORKER_URL = "/pdf.worker.min.mjs";
 
 function buildZipFilename(originalName: string | null): string {
-  if (!originalName || typeof originalName !== "string") return "rechnungen.zip";
+  if (!originalName || typeof originalName !== "string")
+    return "rechnungen.zip";
   const base = originalName.replace(/\.pdf$/i, "").trim();
-  const safe = base.replace(/[^\wäöüÄÖÜß\-_.\s]/g, "_").slice(0, 80) || "rechnungen";
+  const safe =
+    base.replace(/[^\wäöüÄÖÜß\-_.\s]/g, "_").slice(0, 80) || "rechnungen";
   return `${safe}_rechnungen.zip`;
 }
 
@@ -19,9 +21,16 @@ type ProgressPhase = "splitting" | "processing";
 function normalizePdfError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const lower = msg.toLowerCase();
-  if (lower.includes("password") && (lower.includes("required") || lower.includes("needed")))
+  if (
+    lower.includes("password") &&
+    (lower.includes("required") || lower.includes("needed"))
+  )
     return "Dieses PDF ist passwortgeschützt. Bitte Passwort eingeben.";
-  if (lower.includes("wrong password") || lower.includes("invalid password") || lower.includes("incorrect password"))
+  if (
+    lower.includes("wrong password") ||
+    lower.includes("invalid password") ||
+    lower.includes("incorrect password")
+  )
     return "Falsches Passwort.";
   if (lower.includes("password"))
     return "Passwortfehler. Bitte prüfen Sie das Passwort.";
@@ -32,10 +41,17 @@ function normalizePdfError(err: unknown): string {
 function isPasswordRequiredError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   const lower = msg.toLowerCase();
-  if (lower.includes("wrong password") || lower.includes("invalid password") || lower.includes("incorrect password"))
+  if (
+    lower.includes("wrong password") ||
+    lower.includes("invalid password") ||
+    lower.includes("incorrect password")
+  )
     return false;
   if (/encrypted/i.test(msg)) return true;
-  if (lower.includes("password") && (lower.includes("required") || lower.includes("needed")))
+  if (
+    lower.includes("password") &&
+    (lower.includes("required") || lower.includes("needed"))
+  )
     return true;
   return false;
 }
@@ -47,7 +63,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [progressPhase, setProgressPhase] = useState<ProgressPhase | null>(null);
+  const [progressPhase, setProgressPhase] = useState<ProgressPhase | null>(
+    null,
+  );
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal, setProgressTotal] = useState(0);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -56,7 +74,10 @@ export default function Home() {
   const passwordDialogRef = useRef<HTMLDialogElement>(null);
 
   const runProcessing = useCallback(
-    async (file: File, password: string | undefined): Promise<{ pageCount: number }> => {
+    async (
+      file: File,
+      password: string | undefined,
+    ): Promise<{ pageCount: number }> => {
       const [
         { processPdfToPages, getPdfPageCount, setPdfWorkerSrc },
         { default: JSZip },
@@ -70,7 +91,10 @@ export default function Home() {
       const pdfBuffer = new Uint8Array(arrayBuffer);
       const pdfPassword = password?.trim() || undefined;
 
-      const total = await getPdfPageCount(pdfBuffer, { password: pdfPassword });
+      // Pass a copy for page count so PDF.js worker transfer cannot detach the buffer used below.
+      const total = await getPdfPageCount(new Uint8Array(pdfBuffer), {
+        password: pdfPassword,
+      });
       setProgressTotal(total);
       setProgressPhase("splitting");
       setProgressCurrent(0);
@@ -139,19 +163,22 @@ export default function Home() {
     setIsDragging(false);
   }, []);
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.type !== "application/pdf") {
-      setError("Nur PDF-Dateien sind erlaubt.");
-      setFile(null);
-      setStatus("error");
-      return;
-    }
-    setError(null);
-    setFile(f);
-    setStatus("idle");
-  }, []);
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      if (f.type !== "application/pdf") {
+        setError("Nur PDF-Dateien sind erlaubt.");
+        setFile(null);
+        setStatus("error");
+        return;
+      }
+      setError(null);
+      setFile(f);
+      setStatus("idle");
+    },
+    [],
+  );
 
   const handleUpload = useCallback(async () => {
     if (!file) return;
@@ -198,6 +225,21 @@ export default function Home() {
     handleReset();
   }, [handleReset]);
 
+  const loadSampleEncryptedPdf = useCallback(async () => {
+    setError(null);
+    setStatus("idle");
+    try {
+      const res = await fetch("/samples/encrypted.pdf");
+      if (!res.ok) throw new Error("Beispiel-PDF konnte nicht geladen werden.");
+      const blob = await res.blob();
+      const f = new File([blob], "encrypted.pdf", { type: "application/pdf" });
+      setFile(f);
+      setPassword("kanbanery");
+    } catch (e) {
+      setError(normalizePdfError(e));
+    }
+  }, []);
+
   const handlePasswordModalSubmit = useCallback(async () => {
     if (!file) return;
     setModalError(null);
@@ -207,7 +249,10 @@ export default function Home() {
     setProgressCurrent(0);
     setProgressTotal(0);
     try {
-      const result = await runProcessing(file, modalPassword.trim() || undefined);
+      const result = await runProcessing(
+        file,
+        modalPassword.trim() || undefined,
+      );
       setPageCount(result.pageCount);
       setStatus("success");
       setModalPassword("");
@@ -287,6 +332,17 @@ export default function Home() {
           Verarbeitung erfolgt vollständig auf Ihrem Gerät – keine Daten werden
           hochgeladen. Kostenlos, ohne Anmeldung.
         </p>
+        {process.env.NODE_ENV === "development" && (
+          <p className="text-center">
+            <button
+              type="button"
+              onClick={loadSampleEncryptedPdf}
+              className="text-sm text-emerald-400 hover:text-emerald-300 underline"
+            >
+              Beispiel: verschlüsseltes PDF laden (Passwort: kanbanery)
+            </button>
+          </p>
+        )}
 
         <div
           onDrop={handleDrop}
@@ -307,7 +363,10 @@ export default function Home() {
           />
           {file ? (
             <div className="space-y-2">
-              <p className="text-zinc-200 font-medium truncate" title={file.name}>
+              <p
+                className="text-zinc-200 font-medium truncate"
+                title={file.name}
+              >
                 {file.name}
               </p>
               <p className="text-xs text-zinc-500">
@@ -368,11 +427,10 @@ export default function Home() {
               <p className="text-sm text-zinc-300 text-center">
                 {progressPhase === "splitting" &&
                   `Seiten werden getrennt … ${progressCurrent} von ${progressTotal}`}
-                {progressPhase === "processing" && (
-                  progressCurrent >= progressTotal
+                {progressPhase === "processing" &&
+                  (progressCurrent >= progressTotal
                     ? "ZIP wird erstellt …"
-                    : `Seite ${progressCurrent + 1} von ${progressTotal} wird verarbeitet …`
-                )}
+                    : `Seite ${progressCurrent + 1} von ${progressTotal} wird verarbeitet …`)}
                 {!progressPhase && progressTotal === 0 && "PDF wird geladen …"}
               </p>
               {progressTotal > 0 && (
@@ -401,9 +459,8 @@ export default function Home() {
 
         {status === "success" && (
           <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm p-3 text-center">
-            Fertig.{" "}
-            {pageCount != null ? `${pageCount} Dokumente – ` : ""}ZIP-Download
-            wurde gestartet.
+            Fertig. {pageCount != null ? `${pageCount} Dokumente – ` : ""}
+            ZIP-Download wurde gestartet.
           </div>
         )}
 
