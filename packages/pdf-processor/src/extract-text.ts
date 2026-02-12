@@ -18,8 +18,6 @@ interface PdfDocument {
   getPage(
     i: number,
   ): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string }> }> }>;
-  /** Returns decrypted PDF bytes when document was opened with password. */
-  getData?: () => Promise<Uint8Array>;
 }
 
 let pdfjsModule: PdfJsLib | null = null;
@@ -61,8 +59,10 @@ export function setPdfWorkerSrc(src: string): void {
 }
 
 /**
- * Loads a password-protected PDF with PDF.js and returns decrypted bytes.
- * Used so pdf-lib can split the document. Throws if password is wrong or getData is not available.
+ * Loads a password-protected PDF with PDF.js and returns bytes for pdf-lib.
+ * In PDF.js, getData() is on the loading task (not the document). It returns
+ * the raw data of the document; after successful password unlock the transport
+ * may expose decrypted data. Throws if password is wrong or getData is not available.
  */
 export async function getDecryptedPdfBytes(
   pdfBuffer: Uint8Array,
@@ -74,13 +74,14 @@ export async function getDecryptedPdfBytes(
     opts.standardFontDataUrl = getNodeStandardFontDataUrl();
   }
   const loadingTask = pdfjs.getDocument(opts);
-  const doc = await loadingTask.promise;
-  if (typeof doc.getData !== "function") {
+  await loadingTask.promise;
+  const task = loadingTask as unknown as { getData?: () => Promise<Uint8Array> };
+  if (typeof task.getData !== "function") {
     throw new Error(
-      "Password-protected PDFs cannot be split: decrypted bytes are not available in this environment.",
+      "Password-protected PDFs cannot be split: getData is not available in this build.",
     );
   }
-  return doc.getData();
+  return task.getData();
 }
 
 /**

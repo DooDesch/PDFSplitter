@@ -5,10 +5,35 @@ export interface SplitProgressCallback {
   (current: number, total: number): void;
 }
 
+function isEncryptedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /encrypted/i.test(msg);
+}
+
+/**
+ * Load bytes with pdf-lib. When password was used, try without ignoreEncryption first;
+ * if pdf-lib still reports encrypted (e.g. PDF.js getData() returned raw bytes), fall back to ignoreEncryption.
+ */
+async function loadPdfDoc(
+  bytes: Uint8Array,
+  usedPassword: boolean,
+): Promise<Awaited<ReturnType<typeof PDFDocument.load>>> {
+  try {
+    return await PDFDocument.load(bytes, {
+      ...(usedPassword ? {} : { ignoreEncryption: true }),
+    });
+  } catch (err) {
+    if (usedPassword && isEncryptedError(err)) {
+      return PDFDocument.load(bytes, { ignoreEncryption: true });
+    }
+    throw err;
+  }
+}
+
 /**
  * Returns the number of pages in a PDF without fully processing it.
  * Uses pdf-lib; fast way to get page count for progress UI.
- * When password is provided, decrypts via PDF.js first then uses pdf-lib on decrypted bytes.
+ * When password is provided, decrypts via PDF.js first then uses pdf-lib on the result.
  */
 export async function getPdfPageCount(
   pdfBuffer: Uint8Array | ArrayBuffer,
@@ -16,10 +41,12 @@ export async function getPdfPageCount(
 ): Promise<number> {
   let bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
-  if (options?.password !== undefined && options.password !== "") {
-    bytes = await getDecryptedPdfBytes(bytes, options.password);
+  const usedPassword =
+    options?.password !== undefined && options.password !== "";
+  if (usedPassword) {
+    bytes = await getDecryptedPdfBytes(bytes, options.password!);
   }
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const doc = await loadPdfDoc(bytes, usedPassword);
   return doc.getPageCount();
 }
 
@@ -27,7 +54,7 @@ export async function getPdfPageCount(
  * Loads a PDF from buffer and splits it into one PDF per page.
  * Returns an array of buffers, each containing a single-page PDF.
  * Works in Node and browser (Uint8Array / ArrayBuffer).
- * When password is provided, decrypts via PDF.js first then uses pdf-lib on decrypted bytes.
+ * When password is provided, decrypts via PDF.js then uses pdf-lib (with ignoreEncryption fallback if needed).
  * Optional onProgress(current, total) is called after each page is split.
  */
 export async function splitPdfByPages(
@@ -36,12 +63,12 @@ export async function splitPdfByPages(
 ): Promise<Uint8Array[]> {
   let bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : pdfBuffer;
-  if (options?.password !== undefined && options.password !== "") {
-    bytes = await getDecryptedPdfBytes(bytes, options.password);
+  const usedPassword =
+    options?.password !== undefined && options.password !== "";
+  if (usedPassword) {
+    bytes = await getDecryptedPdfBytes(bytes, options.password!);
   }
-  const sourceDoc = await PDFDocument.load(bytes, {
-    ignoreEncryption: true,
-  });
+  const sourceDoc = await loadPdfDoc(bytes, usedPassword);
   const pageCount = sourceDoc.getPageCount();
   const result: Uint8Array[] = [];
   const onProgress = options?.onProgress;
