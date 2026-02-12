@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LARGE_FILE_WARNING_MB } from "@/lib/constants";
 
 // PDF.js worker (must be set before first getDocument). Served from public/ to avoid CORS.
@@ -28,6 +28,18 @@ function normalizePdfError(err: unknown): string {
   return msg || "Verarbeitung fehlgeschlagen.";
 }
 
+/** True when the error indicates "password required" (encrypted PDF), not "wrong password". */
+function isPasswordRequiredError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  if (lower.includes("wrong password") || lower.includes("invalid password") || lower.includes("incorrect password"))
+    return false;
+  if (/encrypted/i.test(msg)) return true;
+  if (lower.includes("password") && (lower.includes("required") || lower.includes("needed")))
+    return true;
+  return false;
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -38,6 +50,68 @@ export default function Home() {
   const [progressPhase, setProgressPhase] = useState<ProgressPhase | null>(null);
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal, setProgressTotal] = useState(0);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [modalPassword, setModalPassword] = useState("");
+  const [modalError, setModalError] = useState<string | null>(null);
+  const passwordDialogRef = useRef<HTMLDialogElement>(null);
+
+  const runProcessing = useCallback(
+    async (file: File, password: string | undefined): Promise<{ pageCount: number }> => {
+      const [
+        { processPdfToPages, getPdfPageCount, setPdfWorkerSrc },
+        { default: JSZip },
+      ] = await Promise.all([
+        import("@pdf-splitter/pdf-processor"),
+        import("jszip"),
+      ]);
+      setPdfWorkerSrc(PDF_WORKER_URL);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdfBuffer = new Uint8Array(arrayBuffer);
+      const pdfPassword = password?.trim() || undefined;
+
+      const total = await getPdfPageCount(pdfBuffer, { password: pdfPassword });
+      setProgressTotal(total);
+      setProgressPhase("splitting");
+      setProgressCurrent(0);
+
+      const pages = await processPdfToPages(pdfBuffer, {
+        password: pdfPassword,
+        onProgress: (phase, current, total) => {
+          setProgressPhase(phase);
+          setProgressCurrent(current);
+          setProgressTotal(total);
+        },
+      });
+
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+
+      for (const { buffer, filename } of pages) {
+        let uniqueName = filename;
+        let counter = 1;
+        while (usedNames.has(uniqueName)) {
+          const base = filename.replace(/\.pdf$/i, "");
+          uniqueName = `${base}_${counter}.pdf`;
+          counter++;
+        }
+        usedNames.add(uniqueName);
+        zip.file(uniqueName, buffer);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = buildZipFilename(file.name);
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setPageCount(pages.length);
+      return { pageCount: pages.length };
+    },
+    [],
+  );
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -87,67 +161,21 @@ export default function Home() {
     setProgressCurrent(0);
     setProgressTotal(0);
     try {
-      const [
-        {
-          processPdfToPages,
-          getPdfPageCount,
-          setPdfWorkerSrc,
-        },
-        { default: JSZip },
-      ] = await Promise.all([
-        import("@pdf-splitter/pdf-processor"),
-        import("jszip"),
-      ]);
-      setPdfWorkerSrc(PDF_WORKER_URL);
-
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfBuffer = new Uint8Array(arrayBuffer);
-      const pdfPassword = password.trim() || undefined;
-
-      const total = await getPdfPageCount(pdfBuffer, { password: pdfPassword });
-      setProgressTotal(total);
-      setProgressPhase("splitting");
-      setProgressCurrent(0);
-
-      const pages = await processPdfToPages(pdfBuffer, {
-        password: pdfPassword,
-        onProgress: (phase, current, total) => {
-          setProgressPhase(phase);
-          setProgressCurrent(current);
-          setProgressTotal(total);
-        },
-      });
-
-      const zip = new JSZip();
-      const usedNames = new Set<string>();
-
-      for (const { buffer, filename } of pages) {
-        let uniqueName = filename;
-        let counter = 1;
-        while (usedNames.has(uniqueName)) {
-          const base = filename.replace(/\.pdf$/i, "");
-          uniqueName = `${base}_${counter}.pdf`;
-          counter++;
-        }
-        usedNames.add(uniqueName);
-        zip.file(uniqueName, buffer);
-      }
-
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = buildZipFilename(file.name);
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setPageCount(pages.length);
+      const result = await runProcessing(file, password.trim() || undefined);
+      setPageCount(result.pageCount);
       setStatus("success");
     } catch (err) {
+      if (isPasswordRequiredError(err)) {
+        setShowPasswordModal(true);
+        setModalPassword(password);
+        setModalError(null);
+        setStatus("idle");
+        return;
+      }
       setError(normalizePdfError(err));
       setStatus("error");
     }
-  }, [file, password]);
+  }, [file, password, runProcessing]);
 
   const handleReset = useCallback(() => {
     setFile(null);
@@ -158,13 +186,95 @@ export default function Home() {
     setProgressPhase(null);
     setProgressCurrent(0);
     setProgressTotal(0);
+    setShowPasswordModal(false);
+    setModalPassword("");
+    setModalError(null);
   }, []);
+
+  const handlePasswordModalCancel = useCallback(() => {
+    setShowPasswordModal(false);
+    setModalPassword("");
+    setModalError(null);
+    handleReset();
+  }, [handleReset]);
+
+  const handlePasswordModalSubmit = useCallback(async () => {
+    if (!file) return;
+    setModalError(null);
+    setShowPasswordModal(false);
+    setStatus("uploading");
+    setProgressPhase(null);
+    setProgressCurrent(0);
+    setProgressTotal(0);
+    try {
+      const result = await runProcessing(file, modalPassword.trim() || undefined);
+      setPageCount(result.pageCount);
+      setStatus("success");
+      setModalPassword("");
+    } catch (err) {
+      setModalError(normalizePdfError(err));
+      setShowPasswordModal(true);
+      setStatus("idle");
+    }
+  }, [file, modalPassword, runProcessing]);
+
+  useEffect(() => {
+    if (showPasswordModal) {
+      passwordDialogRef.current?.showModal();
+    }
+  }, [showPasswordModal]);
 
   const isLargeFile =
     file != null && file.size > LARGE_FILE_WARNING_MB * 1024 * 1024;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      {showPasswordModal && (
+        <dialog
+          ref={passwordDialogRef}
+          className="rounded-xl border border-zinc-600 bg-zinc-800 p-6 shadow-xl backdrop:bg-black/50"
+          onCancel={handlePasswordModalCancel}
+        >
+          <h2 className="text-lg font-semibold text-zinc-100 mb-2">
+            Passwortgeschütztes PDF
+          </h2>
+          <p className="text-sm text-zinc-400 mb-4">
+            Dieses PDF ist passwortgeschützt. Bitte Passwort eingeben oder
+            abbrechen.
+          </p>
+          <input
+            type="password"
+            value={modalPassword}
+            onChange={(e) => setModalPassword(e.target.value)}
+            placeholder="Passwort"
+            className="w-full py-2 px-3 rounded-lg bg-zinc-700 border border-zinc-600 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent mb-2"
+            autoComplete="off"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handlePasswordModalSubmit();
+            }}
+          />
+          {modalError && (
+            <p className="text-sm text-red-400 mb-4">{modalError}</p>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={handlePasswordModalCancel}
+              className="py-2 px-4 rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePasswordModalSubmit()}
+              className="py-2 px-4 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500"
+            >
+              Entsperren
+            </button>
+          </div>
+        </dialog>
+      )}
+
       <div className="w-full max-w-lg space-y-6">
         <h1 className="text-2xl font-semibold text-center text-zinc-100">
           PDF Splitter
