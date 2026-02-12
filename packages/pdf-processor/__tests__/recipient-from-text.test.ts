@@ -6,7 +6,7 @@ import {
   parseRecipientFromText,
   buildSafeFilename,
   type Recipient,
-} from "@pdf-splitter/pdf-processor";
+} from "../src/recipient-from-text.js";
 
 describe("parseRecipientFromText", () => {
   it("returns null for empty or whitespace-only text", () => {

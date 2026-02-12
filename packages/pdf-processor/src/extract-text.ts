@@ -1,5 +1,4 @@
 // Lazy-loaded in Node (legacy build) vs browser (default build) to avoid DOMMatrix etc. in Node.
-declare const require: NodeRequire;
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -7,6 +6,9 @@ interface GetDocumentOpts {
   data: Uint8Array;
   standardFontDataUrl?: string;
   password?: string;
+  disableFontFace?: boolean;
+  /** 0 = errors only, 1 = warnings (default). In Node we use 0 to avoid font-load stderr. */
+  verbosity?: number;
 }
 
 interface PdfJsLib {
@@ -28,12 +30,32 @@ function isBrowser(): boolean {
   return typeof globalThis !== "undefined" && "window" in globalThis;
 }
 
-/** Resolve file:// URL to pdfjs-dist/standard_fonts/ for Node (trailing slash required). */
-function getNodeStandardFontDataUrl(): string {
+/** File URL to pdfjs-dist standard_fonts/ for Node (trailing slash). Used with disableFontFace so fonts are not actually fetched. */
+async function getNodeStandardFontDataUrl(): Promise<string> {
   if (nodeStandardFontDataUrl) return nodeStandardFontDataUrl;
-  const pdfjsPkgPath = require.resolve("pdfjs-dist/package.json");
+  let pdfjsPkgPath: string;
+  const g =
+    typeof globalThis !== "undefined"
+      ? globalThis
+      : typeof global !== "undefined"
+        ? (global as object)
+        : {};
+  const req = (g as { require?: NodeRequire }).require;
+  if (typeof req?.resolve === "function") {
+    pdfjsPkgPath = req.resolve("pdfjs-dist/package.json");
+  } else if (
+    typeof globalThis !== "undefined" &&
+    !("window" in globalThis)
+  ) {
+    const { createRequire } = await import("node:module");
+    pdfjsPkgPath = createRequire(import.meta.url).resolve(
+      "pdfjs-dist/package.json",
+    );
+  } else {
+    throw new Error("getNodeStandardFontDataUrl is Node-only");
+  }
   const standardFontsDir = join(dirname(pdfjsPkgPath), "standard_fonts");
-  nodeStandardFontDataUrl = pathToFileURL(join(standardFontsDir, "/")).href;
+  nodeStandardFontDataUrl = pathToFileURL(standardFontsDir).href + "/";
   return nodeStandardFontDataUrl;
 }
 
@@ -71,7 +93,9 @@ export async function getDecryptedPdfBytes(
   const pdfjs = await getPdfJs();
   const opts: GetDocumentOpts = { data: pdfBuffer, password };
   if (!isBrowser()) {
-    opts.standardFontDataUrl = getNodeStandardFontDataUrl();
+    opts.disableFontFace = true;
+    opts.standardFontDataUrl = await getNodeStandardFontDataUrl();
+    opts.verbosity = 0;
   }
   const loadingTask = pdfjs.getDocument(opts);
   await loadingTask.promise;
@@ -101,7 +125,9 @@ export async function extractTextFromPdf(
       : {}),
   };
   if (!isBrowser()) {
-    getDocumentOpts.standardFontDataUrl = getNodeStandardFontDataUrl();
+    getDocumentOpts.disableFontFace = true;
+    getDocumentOpts.standardFontDataUrl = await getNodeStandardFontDataUrl();
+    getDocumentOpts.verbosity = 0;
   }
   const doc = await pdfjs.getDocument(getDocumentOpts).promise;
   const numPages = doc.numPages;

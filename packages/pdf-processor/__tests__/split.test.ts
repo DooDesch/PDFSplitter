@@ -6,7 +6,7 @@ import { PDFDocument } from "pdf-lib";
 import {
   splitPdfByPages,
   getPdfPageCount,
-} from "@pdf-splitter/pdf-processor";
+} from "../src/split.js";
 
 async function createPdfWithPageCount(n: number): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
