@@ -19,9 +19,7 @@ export async function getPdfPageCount(
   if (options?.password !== undefined && options.password !== "") {
     bytes = await getDecryptedPdfBytes(bytes, options.password);
   }
-  const doc = await PDFDocument.load(bytes, {
-    ...(options?.password ? {} : { ignoreEncryption: true }),
-  });
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   return doc.getPageCount();
 }
 
@@ -42,7 +40,7 @@ export async function splitPdfByPages(
     bytes = await getDecryptedPdfBytes(bytes, options.password);
   }
   const sourceDoc = await PDFDocument.load(bytes, {
-    ...(options?.password ? {} : { ignoreEncryption: true }),
+    ignoreEncryption: true,
   });
   const pageCount = sourceDoc.getPageCount();
   const result: Uint8Array[] = [];
