@@ -1,5 +1,9 @@
 import { splitPdfByPages, getPdfPageCount } from "./split.js";
-import { extractTextFromPdf, setPdfWorkerSrc } from "./extract-text.js";
+import {
+  extractTextFromPdf,
+  getDecryptedPdfBytes,
+  setPdfWorkerSrc,
+} from "./extract-text.js";
 import {
   parseRecipientFromText,
   buildSafeFilename,
@@ -11,6 +15,7 @@ export {
   splitPdfByPages,
   getPdfPageCount,
   extractTextFromPdf,
+  getDecryptedPdfBytes,
   setPdfWorkerSrc,
   parseRecipientFromText,
   buildSafeFilename,
@@ -32,15 +37,16 @@ export interface ProcessedPage {
  * Loads a PDF buffer, splits by page, extracts text from each page,
  * derives a filename from recipient heuristics, and returns one entry per page.
  * Works in Node and browser (Uint8Array / ArrayBuffer).
- * Optional onProgress(phase, current, total) reports progress for UI.
+ * Optional password for password-protected PDFs; onProgress(phase, current, total) reports progress for UI.
  */
 export async function processPdfToPages(
   pdfBuffer: Uint8Array | ArrayBuffer,
-  options?: { onProgress?: ProcessPdfProgressCallback },
+  options?: { onProgress?: ProcessPdfProgressCallback; password?: string },
 ): Promise<ProcessedPage[]> {
   const onProgress = options?.onProgress;
 
   const pageBuffers = await splitPdfByPages(pdfBuffer, {
+    password: options?.password,
     onProgress: (current, pageTotal) =>
       onProgress?.("splitting", current, pageTotal),
   });

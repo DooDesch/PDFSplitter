@@ -3,10 +3,14 @@ declare const require: NodeRequire;
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
+interface GetDocumentOpts {
+  data: Uint8Array;
+  standardFontDataUrl?: string;
+  password?: string;
+}
+
 interface PdfJsLib {
-  getDocument(opts: { data: Uint8Array; standardFontDataUrl?: string }): {
-    promise: Promise<PdfDocument>;
-  };
+  getDocument(opts: GetDocumentOpts): { promise: Promise<PdfDocument> };
   GlobalWorkerOptions?: { workerSrc: string };
 }
 interface PdfDocument {
@@ -14,6 +18,8 @@ interface PdfDocument {
   getPage(
     i: number,
   ): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string }> }> }>;
+  /** Returns decrypted PDF bytes when document was opened with password. */
+  getData?: () => Promise<Uint8Array>;
 }
 
 let pdfjsModule: PdfJsLib | null = null;
@@ -55,16 +61,43 @@ export function setPdfWorkerSrc(src: string): void {
 }
 
 /**
+ * Loads a password-protected PDF with PDF.js and returns decrypted bytes.
+ * Used so pdf-lib can split the document. Throws if password is wrong or getData is not available.
+ */
+export async function getDecryptedPdfBytes(
+  pdfBuffer: Uint8Array,
+  password: string,
+): Promise<Uint8Array> {
+  const pdfjs = await getPdfJs();
+  const opts: GetDocumentOpts = { data: pdfBuffer, password };
+  if (!isBrowser()) {
+    opts.standardFontDataUrl = getNodeStandardFontDataUrl();
+  }
+  const loadingTask = pdfjs.getDocument(opts);
+  const doc = await loadingTask.promise;
+  if (typeof doc.getData !== "function") {
+    throw new Error(
+      "Password-protected PDFs cannot be split: decrypted bytes are not available in this environment.",
+    );
+  }
+  return doc.getData();
+}
+
+/**
  * Extracts raw text from a single PDF buffer (e.g. one page).
  * Uses pdfjs-dist; in browser, call setPdfWorkerSrc() once before first use.
  * In Node, uses pdfjs-dist legacy build (no worker required).
  */
 export async function extractTextFromPdf(
   pdfBuffer: Uint8Array,
+  options?: { password?: string },
 ): Promise<string> {
   const pdfjs = await getPdfJs();
-  const getDocumentOpts: { data: Uint8Array; standardFontDataUrl?: string } = {
+  const getDocumentOpts: GetDocumentOpts = {
     data: pdfBuffer,
+    ...(options?.password !== undefined && options.password !== ""
+      ? { password: options.password }
+      : {}),
   };
   if (!isBrowser()) {
     getDocumentOpts.standardFontDataUrl = getNodeStandardFontDataUrl();

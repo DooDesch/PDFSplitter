@@ -1,9 +1,12 @@
 /**
- * Unit tests for splitPdfByPages.
+ * Unit tests for splitPdfByPages and getPdfPageCount.
  */
 import { describe, it, expect } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { splitPdfByPages } from "@pdf-splitter/pdf-processor";
+import {
+  splitPdfByPages,
+  getPdfPageCount,
+} from "@pdf-splitter/pdf-processor";
 
 async function createPdfWithPageCount(n: number): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -42,5 +45,36 @@ describe("splitPdfByPages", () => {
       [1, 2],
       [2, 2],
     ]);
+  });
+
+  it("splits same result with no options vs empty password (unencrypted PDF)", async () => {
+    const pdf = await createPdfWithPageCount(2);
+    const [resultNoOpts, resultEmptyPass] = await Promise.all([
+      splitPdfByPages(pdf),
+      splitPdfByPages(pdf, { password: "" }),
+    ]);
+    expect(resultNoOpts).toHaveLength(2);
+    expect(resultEmptyPass).toHaveLength(2);
+    expect(resultNoOpts[0]!.length).toBe(resultEmptyPass[0]!.length);
+    expect(resultNoOpts[1]!.length).toBe(resultEmptyPass[1]!.length);
+  });
+});
+
+describe("getPdfPageCount", () => {
+  it("returns page count for unencrypted PDF", async () => {
+    const pdf = await createPdfWithPageCount(3);
+    expect(await getPdfPageCount(pdf)).toBe(3);
+  });
+
+  it("returns same count with no options vs empty password", async () => {
+    const pdf = await createPdfWithPageCount(2);
+    const [a, b, c] = await Promise.all([
+      getPdfPageCount(pdf),
+      getPdfPageCount(pdf, {}),
+      getPdfPageCount(pdf, { password: "" }),
+    ]);
+    expect(a).toBe(2);
+    expect(b).toBe(2);
+    expect(c).toBe(2);
   });
 });

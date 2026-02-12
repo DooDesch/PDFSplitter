@@ -16,8 +16,21 @@ function buildZipFilename(originalName: string | null): string {
 type Status = "idle" | "uploading" | "success" | "error";
 type ProgressPhase = "splitting" | "processing";
 
+function normalizePdfError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  if (lower.includes("password") && (lower.includes("required") || lower.includes("needed")))
+    return "Dieses PDF ist passwortgeschützt. Bitte Passwort eingeben.";
+  if (lower.includes("wrong password") || lower.includes("invalid password") || lower.includes("incorrect password"))
+    return "Falsches Passwort.";
+  if (lower.includes("password"))
+    return "Passwortfehler. Bitte prüfen Sie das Passwort.";
+  return msg || "Verarbeitung fehlgeschlagen.";
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
+  const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -89,13 +102,15 @@ export default function Home() {
 
       const arrayBuffer = await file.arrayBuffer();
       const pdfBuffer = new Uint8Array(arrayBuffer);
+      const pdfPassword = password.trim() || undefined;
 
-      const total = await getPdfPageCount(pdfBuffer);
+      const total = await getPdfPageCount(pdfBuffer, { password: pdfPassword });
       setProgressTotal(total);
       setProgressPhase("splitting");
       setProgressCurrent(0);
 
       const pages = await processPdfToPages(pdfBuffer, {
+        password: pdfPassword,
         onProgress: (phase, current, total) => {
           setProgressPhase(phase);
           setProgressCurrent(current);
@@ -129,15 +144,14 @@ export default function Home() {
       setPageCount(pages.length);
       setStatus("success");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Verarbeitung fehlgeschlagen."
-      );
+      setError(normalizePdfError(err));
       setStatus("error");
     }
-  }, [file]);
+  }, [file, password]);
 
   const handleReset = useCallback(() => {
     setFile(null);
+    setPassword("");
     setStatus("idle");
     setError(null);
     setPageCount(null);
@@ -211,6 +225,26 @@ export default function Home() {
             </label>
           )}
         </div>
+
+        {file && (
+          <div className="space-y-1">
+            <label
+              htmlFor="pdf-password"
+              className="block text-sm text-zinc-400"
+            >
+              Passwort (falls PDF geschützt)
+            </label>
+            <input
+              id="pdf-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Leer lassen wenn ungeschützt"
+              className="w-full py-2 px-3 rounded-lg bg-zinc-800 border border-zinc-600 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              autoComplete="off"
+            />
+          </div>
+        )}
 
         {error && (
           <div className="rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3">
